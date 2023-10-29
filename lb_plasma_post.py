@@ -1,35 +1,88 @@
 import configparser
+import argparse,sys
  
 config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+parser = argparse.ArgumentParser()
 
 error = False
 error_msg = ""
 
-params ={}
+param_file_default = "params.ini" #the default file name we look for if the param file isn't provided as a parameter
+
+default_outfile_prefix = "lbp_"
+
+def add_error_msg(msg):
+    global error, error_msg
+    error= True
+    error +=msg
+
+
+def get_command_line_arguments():
+
+    parser.add_argument("--infile", help="input filename to parse, must be lightburn GRBL-M3 generated")
+    parser.add_argument("--outfile", help="output filename to generated, should be different to input filename")
+    parser.add_argument("--paramfile", help="paramaters .ini filename to use")
+
+    args={}
+    args=parser.parse_args()
+
+    return args 
 
 
 def read_config_param(section, param):
-    global error, error_msg
-    
     val=""
-    if config.has_option(section, param):
-        val = config.get(section, param) #config.get(section, param)
-    else:
-        error = True
-        error_msg += "["+section+"]\n"+param+ "=Not Set \n"
     
+    #check if the param value is set
+    if config.has_option(section, param):
+        val = config.get(section, param)  
+    else:
+        #required value not set, set error message
+        add_error_msg("["+section+"]\n"+param+ "=Not Set \n")
+        
+    #return the parameter value
     return val
 
 
-def read_params(params_file):
-
+def read_params(params_file, commandline_args):
     param_vals = {}
 
-    config.read(params_file)
+    #open the params file
+    try:
+        with open(params_file) as p:
+            config.read_file(p)
+    except IOError:
 
-    #file values
-    param_vals["file_input"] = read_config_param("files", "file_input")
-    param_vals["file_output"] = read_config_param("files", "file_output")
+        #param file could not be opened
+        add_error_msg("ERROR: Could not open parameter file '" + params_file+"'")
+        return
+
+    #commandline args take precident over param file values
+
+    #input file- check if the input file was provided as a command line argument
+    if(commandline_args.infile is None):
+
+        #no input file given as command line argument, read from param file instead
+        param_vals["file_input"] = read_config_param("files", "file_input")
+    else:
+        param_vals["file_input"] = commandline_args.infile
+    
+    #check if output file was given as argument
+    if(commandline_args.outfile is None):
+
+        #output file not given as argument, attempt to read it from params file
+        if config.has_option("files","file_output"):
+
+            #output file exists in params file
+            param_vals["file_output"]  = config.get("files","file_output")
+        else:
+
+            #no output file exists in params file, use the default outputfile
+            param_vals["file_output"] = default_outfile_prefix + param_vals["file_input"]
+            print("INFO: No output file specified, using default file name " +param_vals["file_output"] )
+    else:
+
+        #output file given as command line argument  
+        param_vals["file_input"] = commandline_args.outfile
 
     #probe values
     param_vals["probe_feed"] = read_config_param("probe", "probe_feed")
@@ -50,38 +103,34 @@ def read_params(params_file):
 
     #add new lines so this block is slightly seperated from the rest of the gcode and is therefore easier to find and verify
     param_vals["M3_replace"] = str("\n;M3 Replacement\n" + m3_replace + "\n")
-
     param_vals["M5_replace"] = str("\n;M5 Replacement\n" + m5_replace + "\n")
 
     return param_vals
 
-
-
 def write_post(param_vals):
 
-    #probe_gcode = "\n;touch off \nG32.2 Z" + param_vals["probe_distance"] + " F"+ param_vals["probe_feed"] +" ;probe the torch \nG92 Z0 ;set 0\n" 
-    #retract_gcode = "G1 Z"+param_vals["probe_retract_distance"] +" F" +param_vals["probe_retract_feed"] +  ";retract the torch\n"
-    
-    #dwell_start_gcode = ""
-    #if(param_vals["dwell_start_time"] !="0"):
-    #    dwell_start_gcode="G4 P"+param_vals["dwell_start_time"] +";dwell start\n"
-    
-    #dwell_end_gcode=";dwell end\n"
-
     code_replace = {
-        "M3" :  param_vals["M3_replace"] , #"M3" : probe_gcode + retract_gcode + "M3 ;turn on torch\n" + dwell_start_gcode,
-        "M5" :  param_vals["M5_replace"]  #needs further testing
+        "M3" :  param_vals["M3_replace"] ,  
+        "M5" :  param_vals["M5_replace"]   
     }
     
-    #text_to_search = "M3"
-    #text_to_replace=probe_gcode+retract_gcode
-
-
-
     #open the files
-    ifile = open(param_vals["file_input"], 'r')
-    ofile = open(param_vals["file_output"], 'w') 
+    try:
+        ifile = open(param_vals["file_input"], 'r')
+    except FileNotFoundError:
+        add_error_msg("ERROR: couldn't open input file '" + param_vals["file_input"] +"'" )
+        return
+
+    try:
+        ofile = open(param_vals["file_output"], 'w') 
+    except FileNotFoundError:
+        add_error_msg("ERROR: couldn't open output file '" + param_vals["file_output"] +"'" )
+        return
     
+    print("INFO: Using input file " + param_vals["file_input"])
+    print("INFO: Using output file " + param_vals["file_output"])
+
+    #skip the first M5 command in the generated gcode
     first_m5 = True
     
 
@@ -147,14 +196,46 @@ def write_post(param_vals):
     ifile.close()
     ofile.close()
 
-params = read_params("params.ini")
+def main():
 
-if(error == True):
-    print("The following errors occured")
-    print(error_msg)
-else:
-    write_post(params)
-    print("Completed: " + params["file_output"] + " created ok")
+    #get the command line arguments, note these take priority over the param file values
+    command_args = get_command_line_arguments()
+
+    #read the parameter file values
+    params = {}
+
+    #use the default parameter file name value if one is not specified in the command line arguments
+    param_file = param_file_default
+    
+    #check if parameter file was given as a command line argument
+    if command_args.paramfile is not None:
+
+        #use the parameter filename given as a command line argument
+        param_file = command_args.paramfile
+
+    print("INFO: Using parameter file " + param_file)
+    
+    #read the parameter file
+    params = read_params(param_file,command_args)
+    
+    #check for errors reading the parameter file
+    if(error == True):
+        print("The following errors occured")
+        print(error_msg)
+    else:
+
+        #no errors reading the parameter file, attempt to write the post file
+        write_post(params)
+
+        #check for errors writing the processed file
+        if(error == True):
+            print("The following errors occured")
+            print(error_msg)
+        else:
+            #all good
+            print("Completed: " + params["file_output"] + " created ok")
 
 
- 
+
+main()
+
