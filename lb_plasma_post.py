@@ -1,3 +1,7 @@
+#lightburn plasma post processor
+#this software is released as-is with no guarantee it will work
+#2023-Kunal Patel
+
 import configparser
 import argparse,sys
  
@@ -9,6 +13,8 @@ error_msg = ""
 
 param_file_default = "params.ini" #the default file name we look for if the param file isn't provided as a parameter
 
+
+#when no output file is specified outputfile = inputfilename with this default prefixed
 default_outfile_prefix = "lbp_"
 
 def add_error_msg(msg):
@@ -19,14 +25,13 @@ def add_error_msg(msg):
 
 def get_command_line_arguments():
 
+    #these arguments are all optional. if inputfile is not set in the command line it must be set in the param file
+    #if param file is not set in the command line the program will look for a params.ini in the program directory
     parser.add_argument("--infile", help="input filename to parse, must be lightburn GRBL-M3 generated")
     parser.add_argument("--outfile", help="output filename to generated, should be different to input filename")
     parser.add_argument("--paramfile", help="paramaters .ini filename to use")
 
-    args={}
-    args=parser.parse_args()
-
-    return args 
+    return parser.parse_args() 
 
 
 def read_config_param(section, param):
@@ -234,8 +239,6 @@ def main():
         else:
             #all good
             print("Completed: " + params["file_output"] + " created ok")
-
-
 
 main()
 
