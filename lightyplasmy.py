@@ -1,6 +1,6 @@
 #lightburn plasma post processor
-#this software is released as-is with no guarantee it will work
-#2023-Kunal Patel
+#this software is released as-is with no guarantee it will work. Use at your own risk. Cheers
+#2023-KP
 
 import configparser
 import argparse,sys
@@ -20,7 +20,7 @@ default_outfile_prefix = "lbp_"
 def add_error_msg(msg):
     global error, error_msg
     error= True
-    error +=msg
+    error_msg +=msg
 
 
 def get_command_line_arguments():
@@ -87,7 +87,7 @@ def read_params(params_file, commandline_args):
     else:
 
         #output file given as command line argument  
-        param_vals["file_input"] = commandline_args.outfile
+        param_vals["file_output"] = commandline_args.outfile
 
     #probe values
     param_vals["probe_feed"] = read_config_param("probe", "probe_feed")
