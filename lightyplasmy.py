@@ -60,6 +60,12 @@ def read_params(params_file, commandline_args):
         #param file could not be opened
         add_error_msg("ERROR: Could not open parameter file '" + params_file+"'")
         return
+    except configparser.Error as e:
+
+        #param file could be opened but is not valid ini syntax (e.g. a stray character
+        #before the first [section], a duplicate key, a bad continuation line, etc.)
+        add_error_msg("ERROR: Parameter file '" + params_file + "' is not valid: \n" + str(e))
+        return
 
     #commandline args take precident over param file values
 
